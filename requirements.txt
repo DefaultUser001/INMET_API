@@ -1,4 +1,4 @@
 flask
 flask-cors
+selenium
 beautifulsoup4
-requests
