@@ -9,6 +9,7 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY ./app ./app
+COPY ./dashboard ./dashboard
 COPY .env .env
 
 EXPOSE 8000
