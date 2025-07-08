@@ -1,35 +1,47 @@
+# Use uma imagem base do Python
 FROM python:3.11-slim
 
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Instala dependências do sistema e do Chrome
+# Instalar dependências do sistema para Chrome e Selenium
 RUN apt-get update && apt-get install -y \
-    wget curl unzip gnupg \
-    libnss3 libxss1 libappindicator3-1 \
-    libasound2 libatk-bridge2.0-0 libgtk-3-0 \
-    libx11-xcb1 fonts-liberation xdg-utils \
-    --no-install-recommends && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+    wget \
+    curl \
+    unzip \
+    gnupg \
+    && rm -rf /var/lib/apt/lists/*
 
-# Instala Chrome versão 114 (estável e compatível com chromedriver 114)
-RUN wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && \
-    apt install -y ./google-chrome-stable_current_amd64.deb && \
-    rm google-chrome-stable_current_amd64.deb
+# Instalar Google Chrome
+RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable \
+    && rm -rf /var/lib/apt/lists/*
 
-ENV CHROME_BIN=/usr/bin/google-chrome
+# Instalar ChromeDriver
+RUN CHROMEDRIVER_VERSION=$(curl -sS chromedriver.storage.googleapis.com/LATEST_RELEASE) \
+    && wget -N http://chromedriver.storage.googleapis.com/$CHROMEDRIVER_VERSION/chromedriver_linux64.zip \
+    && unzip chromedriver_linux64.zip \
+    && rm chromedriver_linux64.zip \
+    && mv chromedriver /usr/local/bin/chromedriver \
+    && chmod +x /usr/local/bin/chromedriver
 
-# Instala o Chromedriver v114 (compatível com o Chrome 114)
-RUN wget -O /tmp/chromedriver.zip https://chromedriver.storage.googleapis.com/114.0.5735.90/chromedriver_linux64.zip && \
-    unzip /tmp/chromedriver.zip -d /usr/local/bin/ && \
-    chmod +x /usr/local/bin/chromedriver && \
-    rm /tmp/chromedriver.zip
-
-# Cria diretório da aplicação
+# Definir diretório de trabalho
 WORKDIR /app
 
+# Copiar arquivos de dependências
+COPY requirements.txt .
+
+# Instalar dependências Python
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copiar código da aplicação
 COPY . .
 
-RUN pip install --upgrade pip && pip install -r requirements.txt
+# Expor porta
+EXPOSE 5000
 
-EXPOSE 8000
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "app:app"]
+# Variáveis de ambiente
+ENV PYTHONUNBUFFERED=1
+ENV PORT=5000
+
+# Comando para iniciar a aplicação
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120", "app:app"]
