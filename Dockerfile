@@ -1,47 +1,58 @@
-# Use uma imagem base do Python
+# Use uma imagem base oficial do Python
 FROM python:3.11-slim
 
-# Instalar dependências do sistema para Chrome e Selenium
+# Definir variáveis de ambiente
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Instalar dependências do sistema necessárias para Chrome e Selenium
 RUN apt-get update && apt-get install -y \
     wget \
-    curl \
-    unzip \
     gnupg \
+    unzip \
+    curl \
+    xvfb \
     && rm -rf /var/lib/apt/lists/*
+
+# Adicionar repositório do Google Chrome
+RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list
 
 # Instalar Google Chrome
-RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update \
-    && apt-get install -y google-chrome-stable \
+RUN apt-get update && apt-get install -y \
+    google-chrome-stable \
     && rm -rf /var/lib/apt/lists/*
 
-# Instalar ChromeDriver
-RUN CHROMEDRIVER_VERSION=$(curl -sS chromedriver.storage.googleapis.com/LATEST_RELEASE) \
-    && wget -N http://chromedriver.storage.googleapis.com/$CHROMEDRIVER_VERSION/chromedriver_linux64.zip \
-    && unzip chromedriver_linux64.zip \
-    && rm chromedriver_linux64.zip \
-    && mv chromedriver /usr/local/bin/chromedriver \
-    && chmod +x /usr/local/bin/chromedriver
-
-# Definir diretório de trabalho
+# Criar diretório de trabalho
 WORKDIR /app
 
-# Copiar arquivos de dependências
+# Copiar arquivo de requirements
 COPY requirements.txt .
 
 # Instalar dependências Python
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copiar código da aplicação
 COPY . .
 
-# Expor porta
-EXPOSE 5000
+# Criar usuário não-root para segurança
+RUN groupadd -r appuser && useradd -r -g appuser appuser
 
-# Variáveis de ambiente
-ENV PYTHONUNBUFFERED=1
-ENV PORT=5000
+# Criar diretórios necessários e definir permissões
+RUN mkdir -p /app/logs && \
+    chown -R appuser:appuser /app
+
+# Mudar para usuário não-root
+USER appuser
+
+# Expor porta da aplicação
+EXPOSE 8000
+
+# Comando de healthcheck
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
 
 # Comando para iniciar a aplicação
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120", "app:app"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
